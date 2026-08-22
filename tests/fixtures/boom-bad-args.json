@@ -1,0 +1,11 @@
+{
+  "name": "boom-bad-args",
+  "prompt": "run boom mode bogus",
+  "script": { "tool": "boom", "args": { "mode": "bogus" }, "text": "SANDBOX_BADARGS_PASS" },
+  "expect": {
+    "alive": true,
+    "outputContains": "SANDBOX_BADARGS_PASS",
+    "resultContains": "must be equal to one of the allowed values",
+    "resultIsError": true
+  }
+}

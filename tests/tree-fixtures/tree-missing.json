@@ -1,0 +1,13 @@
+{
+  "name": "tree-missing",
+  "note": "error path: missing path must throw (isError=true)",
+  "prompt": "list a missing path",
+  "setup": { "cwd": "temp" },
+  "script": { "tool": "tree", "args": { "path": "does-not-exist" }, "text": "TREE_MISSING" },
+  "expect": {
+    "alive": true,
+    "outputContains": "TREE_MISSING",
+    "resultContains": "path not found",
+    "resultIsError": true
+  }
+}

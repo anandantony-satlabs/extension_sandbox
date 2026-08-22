@@ -1,0 +1,13 @@
+{
+  "name": "tree-not-dir",
+  "note": "error path: a file (not a dir) must throw (isError=true)",
+  "prompt": "list a file",
+  "setup": { "cwd": "temp", "files": { "file.txt": "hi" } },
+  "script": { "tool": "tree", "args": { "path": "file.txt" }, "text": "TREE_NOTDIR" },
+  "expect": {
+    "alive": true,
+    "outputContains": "TREE_NOTDIR",
+    "resultContains": "not a directory",
+    "resultIsError": true
+  }
+}

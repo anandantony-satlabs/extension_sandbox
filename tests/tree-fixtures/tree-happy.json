@@ -1,0 +1,22 @@
+{
+  "name": "tree-happy",
+  "note": "resettable corpus in a fresh temp dir; asserts dotfiles are excluded",
+  "prompt": "list the project",
+  "setup": {
+    "cwd": "temp",
+    "files": {
+      "src/a.ts": "export const a = 1;",
+      "src/sub/b.ts": "export const b = 2;",
+      ".env": "SECRET=1",
+      "README.md": "# project"
+    }
+  },
+  "script": { "tool": "tree", "args": { "path": "src" }, "text": "TREE_HAPPY" },
+  "expect": {
+    "alive": true,
+    "outputContains": "TREE_HAPPY",
+    "resultContains": "a.ts",
+    "resultNotContains": ".env",
+    "resultIsError": false
+  }
+}

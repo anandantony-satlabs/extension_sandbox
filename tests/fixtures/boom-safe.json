@@ -1,0 +1,11 @@
+{
+  "name": "boom-safe",
+  "prompt": "run boom mode safe and report the result",
+  "script": { "tool": "boom", "args": { "mode": "safe" }, "text": "SANDBOX_SAFE_PASS" },
+  "expect": {
+    "alive": true,
+    "outputContains": "SANDBOX_SAFE_PASS",
+    "resultContains": "safe result: 42",
+    "resultIsError": false
+  }
+}

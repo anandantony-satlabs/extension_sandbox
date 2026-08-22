@@ -1,0 +1,5 @@
+{
+  "prompt": "run boom mode loop and report the result",
+  "script": { "tool": "boom", "args": { "mode": "loop" }, "text": "unreachable" },
+  "expect": { "alive": false, "outputContains": "" }
+}

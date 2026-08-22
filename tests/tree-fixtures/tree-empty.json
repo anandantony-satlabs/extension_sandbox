@@ -1,0 +1,12 @@
+{
+  "name": "tree-empty",
+  "note": "empty dir yields an empty (non-error) result — resultContains on empty output is hard, so rely on resultIsError=false + a sentinel",
+  "prompt": "list an empty dir",
+  "setup": { "cwd": "temp", "files": { "empty/.keep": "" } },
+  "script": { "tool": "tree", "args": { "path": "empty" }, "text": "TREE_EMPTY" },
+  "expect": {
+    "alive": true,
+    "outputContains": "TREE_EMPTY",
+    "resultIsError": false
+  }
+}

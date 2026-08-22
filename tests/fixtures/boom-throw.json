@@ -1,0 +1,11 @@
+{
+  "name": "boom-throw",
+  "prompt": "run boom mode throw and report the error",
+  "script": { "tool": "boom", "args": { "mode": "throw" }, "text": "SANDBOX_THROW_PASS" },
+  "expect": {
+    "alive": true,
+    "outputContains": "SANDBOX_THROW_PASS",
+    "resultContains": "deliberate failure",
+    "resultIsError": true
+  }
+}
