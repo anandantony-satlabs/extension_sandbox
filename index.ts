@@ -145,6 +145,9 @@ export default function (pi: ExtensionAPI) {
       fakeExt: Type.Optional(Type.String({
         description: "Override the fake-model provider extension (advanced). Defaults to the sandbox's bundled fake.",
       })),
+      outputDir: Type.Optional(Type.String({
+        description: "Directory to dump all test artifacts (stdout, stderr, tool results, fixture, summary). Per-test subdirectories created automatically.",
+      })),
       scaffold: Type.Optional(Type.Boolean({
         description: "Instead of running tests, discover the target's tools (in an isolated child) and write one starter fixture per tool into scaffoldDir. Edit them, then re-run with fixturesDir=scaffoldDir. Mutually exclusive with fixturesDir/tests. Built-in tools (read/bash/etc.) are skipped." })),
       scaffoldDir: Type.Optional(Type.String({
@@ -285,6 +288,8 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
+      const outputDir = params.outputDir ? (isAbsolute(params.outputDir) ? params.outputDir : resolve(cwd, params.outputDir)) : undefined;
+
       onUpdate?.({
         content: [{
           type: "text",
@@ -295,7 +300,7 @@ export default function (pi: ExtensionAPI) {
       const results: ({ name: string; note?: string } & SandboxResult)[] = [];
       for (const { name, fixture } of suite) {
         onUpdate?.({ content: [{ type: "text", text: `> ${name}` }] });
-        const res = await runSandbox({ cwd, fakeExt, targetExt: target, fixture, timeoutS });
+        const res = await runSandbox({ cwd, fakeExt, targetExt: target, fixture, timeoutS, outputDir, testName: name });
         results.push({ name, note: fixture.note, ...res });
       }
 
@@ -330,6 +335,9 @@ export default function (pi: ExtensionAPI) {
         }
         if (!r.ok && r.childCwd) lines.push(`        ⚠ working tree kept: ${r.childCwd}`);
       }
+
+      if (outputDir) lines.push(`
+Artifacts dumped to: ${outputDir}`);
 
       return {
         content: [{ type: "text", text: lines.join("\n") }],

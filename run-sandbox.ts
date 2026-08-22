@@ -56,6 +56,10 @@ export interface SandboxOptions {
   fixture: Fixture;
   /** seconds; if child doesn't exit in time it is killed (containment proof) */
   timeoutS?: number;
+  /** directory to dump all artifacts (stdout, stderr, tool results, child cwd files) */
+  outputDir?: string;
+  /** test name for artifact subdirectory (defaults to fixture.name) */
+  testName?: string;
 }
 
 export interface SandboxResult {
@@ -308,6 +312,75 @@ export async function runSandbox(o: SandboxOptions): Promise<SandboxResult> {
     try { rmSync(createdTemp, { recursive: true, force: true }); } catch { /* best-effort */ }
   }
 
+  // Dump artifacts to outputDir if specified
+  if (o.outputDir) {
+    const testName = o.testName ?? o.fixture.name ?? "test";
+    const safeName = testName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const artifactDir = join(o.outputDir, safeName);
+    try {
+      mkdirSync(artifactDir, { recursive: true });
+      // stdout.txt - full child output
+      writeFileSync(join(artifactDir, "stdout.txt"), output);
+      // stderr.txt - same as stdout since we merge them
+      writeFileSync(join(artifactDir, "stderr.txt"), output);
+      // result.json - structured tool results
+      writeFileSync(join(artifactDir, "result.json"), JSON.stringify({
+        toolResults,
+        errors,
+        exitCode,
+        timedOut,
+        durationMs,
+        ok: alright,
+        outcome,
+      }, null, 2));
+      // actual-result.txt - first tool's text content
+      if (actualResult) {
+        writeFileSync(join(artifactDir, "actual-result.txt"), actualResult);
+      }
+      // fixture.json - the test fixture used
+      writeFileSync(join(artifactDir, "fixture.json"), JSON.stringify(o.fixture, null, 2));
+      // summary.txt - human readable
+      writeFileSync(join(artifactDir, "summary.txt"), [
+        `Test: ${testName}`,
+        `Target: ${o.targetExt}`,
+        `Fake: ${o.fakeExt}`,
+        `Outcome: ${outcome}`,
+        `Duration: ${durationMs}ms`,
+        `Exit Code: ${exitCode ?? "N/A"}`,
+        `Timed Out: ${timedOut}`,
+        `Detail: ${detail}`,
+        ``,
+        `Tool Results: ${toolResults.length}`,
+        toolResults.map(tr => `  - ${tr.toolName}${tr.isError ? " (ERROR)" : ""}: ${tr.content.join("\n").slice(0, 100)}`).join("\n"),
+        ``,
+        `Errors: ${errors.length}`,
+        errors.map(e => `  - ${e}`).join("\n"),
+      ].join("\n"));
+      // Copy child working directory files if it exists and we're keeping it
+      if (createdTemp && keepTemp && existsSync(createdTemp)) {
+        const childCwdDest = join(artifactDir, "child-cwd");
+        mkdirSync(childCwdDest, { recursive: true });
+        // Copy all files from temp dir
+        const copyRecursive = (src: string, dest: string) => {
+          if (!existsSync(src)) return;
+          const stat = statSync(src);
+          if (stat.isDirectory()) {
+            mkdirSync(dest, { recursive: true });
+            for (const entry of readdirSync(src)) {
+              copyRecursive(join(src, entry), join(dest, entry));
+            }
+          } else {
+            mkdirSync(dirname(dest), { recursive: true });
+            writeFileSync(dest, readFileSync(src));
+          }
+        };
+        copyRecursive(createdTemp, childCwdDest);
+      }
+    } catch (e) {
+      console.error(`[sandbox] failed to dump artifacts: ${e}`);
+    }
+  }
+
   return {
     ok: alright,
     outcome,
@@ -409,13 +482,26 @@ function isMainEntry(): boolean {
   }
 }
 if (isMainEntry()) {
-  const [fixturePath, fakeExt, targetExt, timeoutS] = process.argv.slice(2);
-  if (!fixturePath || !fakeExt || !targetExt) {
-    console.error('usage: node run-sandbox.ts <fixture.json|fixturesDir> <fakeExt> <targetExt> [timeoutS]');
+  const args = process.argv.slice(2);
+  if (args.length < 3) {
+    console.error('usage: node run-sandbox.ts <fixture.json|fixturesDir> <fakeExt> <targetExt> [timeoutS] [--output-dir <dir>]');
     process.exit(2);
   }
+  const fixturePath = args[0];
+  const fakeExt = args[1];
+  const targetExt = args[2];
+  const remaining = args.slice(3);
+  let timeoutS = 30;
+  let outputDir: string | undefined;
+  for (let i = 0; i < remaining.length; i++) {
+    if (remaining[i] === '--output-dir' && i + 1 < remaining.length) {
+      outputDir = remaining[i + 1];
+      i++;
+    } else if (!isNaN(Number(remaining[i]))) {
+      timeoutS = Number(remaining[i]);
+    }
+  }
   const cwd = process.cwd();
-  const t = timeoutS ? Number(timeoutS) : 30;
 
   const isDir = existsSync(fixturePath) && statSync(fixturePath).isDirectory();
   const files = isDir
@@ -429,7 +515,7 @@ if (isMainEntry()) {
   const results = [];
   for (const f of files) {
     const fixture = JSON.parse(readFileSync(f, "utf-8"));
-    const res = await runSandbox({ cwd, fakeExt, targetExt, fixture, timeoutS: t });
+    const res = await runSandbox({ cwd, fakeExt, targetExt, fixture, timeoutS, outputDir, testName: fixture.name ?? basename(f, ".json") });
     results.push({ name: fixture.name ?? basename(f, ".json"), note: fixture.note, file: f, ...res });
   }
 
@@ -455,9 +541,11 @@ if (isMainEntry()) {
       }
     }
     console.log(`\n${passed}/${results.length} passed`);
+    if (outputDir) console.log(`Artifacts dumped to: ${outputDir}`);
     process.exit(passed === results.length ? 0 : 1);
   } else {
     console.log(JSON.stringify(results[0], null, 2));
+    if (outputDir) console.error(`Artifacts dumped to: ${outputDir}`);
     process.exit(results[0].ok ? 0 : 1);
   }
 }

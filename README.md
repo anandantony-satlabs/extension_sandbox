@@ -75,6 +75,7 @@ ln -s ~/PROJECT/extension_sandbox ~/.pi/agent/extensions/extension_sandbox
 | `tests` | `TestCase[]` | Inline test cases. Mutually exclusive with `fixturesDir`. |
 | `timeoutS` | `number` | Per-test timeout in seconds before the child is `SIGKILL`ed (default `30`). Raise for slow tools. |
 | `fakeExt` | `string` | Override the fake-model provider (advanced). Defaults to the sandbox's bundled `fake/`. |
+| `outputDir` | `string` | **Dump all test artifacts** (stdout, stderr, tool results, fixture, summary, child working tree) into per-test subdirectories under this path. Relative paths resolved from project cwd. |
 | `scaffold` | `boolean` | **Generate** starter fixtures instead of running: discover the target's tools (in an isolated child) and write one template `*.json` per custom tool into `scaffoldDir`. Built-in tools are skipped. Existing fixtures are never overwritten. Edit them, then re-run with `fixturesDir`. Mutually exclusive with `fixturesDir`/`tests`. |
 | `scaffoldDir` | `string` | Where scaffolded fixtures go (default `./tests/<extension-basename>`). Created if missing. |
 
@@ -102,6 +103,72 @@ fake:   /home/me/proj/extension_sandbox/fake
 ```
 
 On a `crash`, `timeout`, or `assert-fail`, the row also shows the tool's actual return value(s) (`toolName: <content>`, truncated), or the child's stdout/stderr tail as a fallback — invaluable for debugging the target.
+
+### Artifact dumping (`outputDir`)
+
+Set `outputDir` to dump a complete, self-contained artifact package for each test — invaluable for debugging flaky or failing fixtures without re-running them:
+
+```bash
+# CLI
+node run-sandbox.ts tests/fixtures ./fake ./targets/risky-ext.ts --output-dir ./artifacts
+
+# Tool
+extension_sandbox(extension="./my-ext", fixturesDir="./tests/my-ext", outputDir="./sandbox-artifacts")
+```
+
+Each test gets its own subdirectory (`outputDir/<test-name>/`):
+
+```
+artifacts/
+└── test-name/
+    ├── stdout.txt          # Full child stdout+stderr (merged)
+    ├── stderr.txt          # Same as stdout
+    ├── result.json         # Structured: toolResults[], errors[], exitCode, timedOut, durationMs, ok, outcome
+    ├── actual-result.txt   # First tool's text content (truncated in report)
+    ├── fixture.json        # The fixture JSON used for this run
+    ├── summary.txt         # Human-readable one-page summary
+    └── child-cwd/          # Child's temp working tree (only on failure; auto-cleaned on pass)
+```
+
+**Files written per test:**
+
+| File | Purpose |
+|------|---------|
+| `stdout.txt` / `stderr.txt` | Complete child output (JSON event stream) — search for tool calls, timing, schema validation |
+| `result.json` | Machine-parseable: all tool results with `isError`, args, content; exit code; timing; outcome |
+| `actual-result.txt` | The exact tool return text (what the `└─ actual:` line truncates) |
+| `fixture.json` | The exact fixture that was run — reproducible without guessing |
+| `summary.txt` | One-page human summary (outcome, detail, tool list, errors) |
+| `child-cwd/` | The temp working tree (`setup.cwd: "temp"`) — **only on failure**, auto-cleaned on pass |
+
+**CLI:**
+```bash
+node run-sandbox.ts tests/fixtures ./fake ./targets/risky-ext.ts --output-dir ./artifacts
+```
+
+**Tool:**
+```typescript
+extension_sandbox({
+  extension: "./my-ext",
+  fixturesDir: "./tests/my-ext",
+  outputDir: "./sandbox-artifacts"   // relative to project cwd
+})
+```
+
+When `outputDir` is omitted (default), no artifacts are written — zero overhead, zero cleanup.
+
+```
+extension_sandbox — 4/4 passed (all green)
+target: ./targets/risky-ext.ts
+fake:   ./fake
+
+[PASS] boom-safe        1240ms  child ran to completion | output matched "SANDBOX_SAFE_PASS"
+[PASS] boom-throw       1266ms  child ran to completion | output matched "SANDBOX_THROW_PASS"
+[PASS] boom-bad-args    1232ms  child ran to completion | output matched "SANDBOX_BADARGS_PASS"
+[PASS] boom-loop       15023ms  child hung (timeout 15s) and was killed | output matched ""
+
+Artifacts dumped to: ./artifacts
+```
 
 ## Fixture format
 
