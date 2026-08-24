@@ -26,7 +26,7 @@ export interface Fixture {
     /** Files to write into the temp dir before the child runs (relative paths; parents auto-created). */
     files?: Record<string, string>;
   };
-  /** Extra env var NAMES to pass through from the parent process, on top of
+/** Extra env var NAMES to pass through from the parent process, on top of
    *  those allowed by sandbox-env.json (hot-read each run). */
   envAllow?: string[];
   /** Explicit env var VALUES injected into the child environment (override
@@ -366,6 +366,13 @@ export async function runSandbox(o: SandboxOptions): Promise<SandboxResult> {
         detail += ` | result isError=${resultIsError}`;
       }
     }
+  }
+
+  // Self-explanatory failures: if the child reported a missing env var,
+  // append the exact fix so no doc-reading is ever needed.
+  const missingVar = output.match(/\b([A-Z][A-Z0-9_]{2,})\s+is not set\b/);
+  if (missingVar) {
+    detail += ` | FIX: add {"allow":["${missingVar[1]}"]} to sandbox-env.json (beside this extension's index.ts, or <project>/.pi/) — hot-read per run, no reload`;
   }
 
   const alright = processOk && assertOk;

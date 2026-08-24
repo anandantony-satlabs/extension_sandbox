@@ -125,7 +125,7 @@ export default function (pi: ExtensionAPI) {
       "Safely test a pi extension under development by driving its tools with a scripted (fake) model in an isolated `pi` subprocess, then return a structured PASS/FAIL report. " +
       "Use while developing or modifying a pi extension to verify its tools don't crash or hang before hot-reloading them into the live session. " +
       "Runs a repeatable suite of fixtures (a directory of *.json files) or inline tests. If the target crashes or hangs, only the child subprocess is affected — this session stays alive. " +
-      "The child gets a hermetic env by default; if a fixture fails with a missing API key (e.g. OPENROUTESERVICE_API_KEY is not set), add the var name to sandbox-env.json (project root, .pi/, or this extension's dir: {\"allow\":[\"KEY_NAME\"], \"set\":{}}) — hot-read every run, no reload needed. Per-fixture envAllow/env fields override.",
+      "Child env is hermetic; if a test fails on a missing API key, follow the FIX line in the report.",
     promptGuidelines: [
       "Use extension_sandbox when developing, modifying, or reviewing a pi extension, to exercise its tools with repeatable fixtures before loading the extension into the live session.",
       "When asked to test or verify an extension, prefer extension_sandbox with a fixturesDir of saved *.json tests over ad-hoc inline tests, so the suite is reusable later.",
