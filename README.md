@@ -251,9 +251,19 @@ Instead of editing code, declare extra variables in a **`sandbox-env.json`** fil
 
 **Config locations** — all three are read on every child spawn and merged (union for `allow`; later sources override earlier ones for `set`). Because the files are hot-read per run, edits take effect on the next test with **no `/reload` needed**:
 
-1. `<extension_sandbox dir>/sandbox-env.json` — global defaults, travel with the dev tool
+1. **`.pi/extensions/extension_sandbox/sandbox-env.json`** — right next to `index.ts`. ⭐ **Use this when you load the extension into a new folder/project**: it resolves relative to the extension file itself (`import.meta.url`), NOT the working directory — so it works no matter where the extension is installed or which folder you launch pi from.
 2. `<project cwd>/sandbox-env.json` — per-project
-3. `<project cwd>/.pi/sandbox-env.json` — per-project, hidden ← *recommended*
+3. `<project cwd>/.pi/sandbox-env.json` — per-project, hidden
+
+A ready-to-edit template ships with the extension: **`sandbox-env.example.json`** (same directory as `index.ts`). Copy it to `sandbox-env.json` and fill in your key names:
+
+```bash
+cp .pi/extensions/extension_sandbox/sandbox-env.example.json \
+   .pi/extensions/extension_sandbox/sandbox-env.json
+# then edit "allow" to list e.g. "OPENROUTESERVICE_API_KEY"
+```
+
+> **Portability note:** if you symlink/copy this extension into a new project's `.pi/extensions/`, an existing `sandbox-env.json` travels with it — so your allow-list follows the extension everywhere. Project-level configs (locations 2–3) layer on top for project-specific keys.
 
 Example: to let route-launcher fixtures hit the real OpenRouteService API, add `.pi/sandbox-env.json` to your project:
 
@@ -344,7 +354,8 @@ live session (your dev pi)
 |------|---------|
 | `index.ts` | The dev extension. Registers the `extension_sandbox` tool. |
 | `run-sandbox.ts` | The orchestrator: spawns the child, kills on timeout, returns `SandboxResult`. Also a headless CLI. Reads `sandbox-env.json` for env passthrough. |
-| `sandbox-env.json` *(optional)* | Declares extra env vars passed into the child: `{ "allow": [...], "set": {...} }`. Searched in the extension dir, project root, and `.pi/`. Hot-read every run. |
+| `sandbox-env.example.json` | Template config — copy to `sandbox-env.json` (beside `index.ts`) to activate env passthrough. |
+| `sandbox-env.json` *(optional)* | Declares extra env vars passed into the child: `{ "allow": [...], "set": {...} }`. Searched beside `index.ts` first, then project root and `.pi/`. Hot-read every run. |
 | `fake/index.ts` | The scripted fake-model provider (pi-ai faux). Reads `SANDBOX_SCRIPT` env. |
 | `targets/risky-ext.ts` | Sample target: a `boom` tool with `safe`/`throw`/`loop` modes. |
 | `targets/risky.ts` | Pure logic for `boom`, unit-testable headless. |
