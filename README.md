@@ -233,60 +233,26 @@ Every file in `fixturesDir` is run (sorted by name). One fixture = one child sub
 
 ### Environment variables (`sandbox-env.json`)
 
-The child normally gets a **hermetic environment** — only a small hardcoded allowlist (`PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`, `TERM`, `PI_CODING_AGENT_DIR`, `PI_PACKAGE_DIR`) plus `SANDBOX_SCRIPT` and `PI_OFFLINE=1`. This keeps tests deterministic (no leaked provider keys), but some targets legitimately need credentials — e.g. an extension that calls a real HTTP API.
-
-Instead of editing code, declare extra variables in a **`sandbox-env.json`** file:
+The child env is **hermetic by default** (small hardcoded allowlist + `SANDBOX_SCRIPT`, `PI_OFFLINE=1`). To pass through extra vars — e.g. real API keys — declare them in a `sandbox-env.json`:
 
 ```jsonc
 {
-  "allow": ["OPENROUTESERVICE_API_KEY"],  // pass through from parent env if present
-  "set":   { "MY_FLAG": "1", "RETRIES": "2" } // explicit values injected always
+  "allow": ["OPENROUTESERVICE_API_KEY"],   // names only; values come from the parent shell (secrets stay out of files)
+  "set":   { "MY_FLAG": "1" }               // explicit values injected unconditionally
 }
 ```
 
-| Key | Type | Meaning |
-|-----|------|---------|
-| `allow` | `string[]` | Names of env vars copied **from the live session's environment** into the child, when present. Secrets stay out of files — only names are declared here; values flow from your shell. |
-| `set` | `object` | Explicit `name → value` pairs injected into the child unconditionally (strings/numbers/booleans are stringified). Use for flags the parent doesn't export. |
+**Locations** (all merged per run; later overrides earlier for `set`):
 
-**Config locations** — all three are read on every child spawn and merged (union for `allow`; later sources override earlier ones for `set`). Because the files are hot-read per run, edits take effect on the next test with **no `/reload` needed**:
+1. `<extension_sandbox dir>/sandbox-env.json` — beside `index.ts`; resolves via `import.meta.url`, so it **travels with the extension into any project folder**
+2. `<project>/sandbox-env.json`
+3. `<project>/.pi/sandbox-env.json`
 
-1. **`.pi/extensions/extension_sandbox/sandbox-env.json`** — right next to `index.ts`. ⭐ **Use this when you load the extension into a new folder/project**: it resolves relative to the extension file itself (`import.meta.url`), NOT the working directory — so it works no matter where the extension is installed or which folder you launch pi from.
-2. `<project cwd>/sandbox-env.json` — per-project
-3. `<project cwd>/.pi/sandbox-env.json` — per-project, hidden
+A default file ships beside `index.ts` — edit it in place. Files are **hot-read on every child spawn**: edits apply to the next test, no `/reload`.
 
-A default **`sandbox-env.json`** ships right beside `index.ts` (with empty `allow`/`set`). To let a target use a real credential, just add its name:
+Per-fixture overrides (highest precedence): fixture fields `envAllow: ["KEY"]` and `env: {"KEY": "value"}` extend the allow-list / override `set` values for that one test.
 
-```jsonc
-// .pi/extensions/extension_sandbox/sandbox-env.json
-{
-  "allow": ["OPENROUTESERVICE_API_KEY"],
-  "set": {}
-}
-```
-
-> **Portability note:** if you symlink/copy this extension into a new project's `.pi/extensions/`, an existing `sandbox-env.json` travels with it — so your allow-list follows the extension everywhere. Project-level configs (locations 2–3) layer on top for project-specific keys.
-
-Example: to let route-launcher fixtures hit the real OpenRouteService API, add `.pi/sandbox-env.json` to your project:
-
-```json
-{ "allow": ["OPENROUTESERVICE_API_KEY"], "set": {} }
-```
-
-**Per-fixture overrides** (highest precedence) for one-off needs:
-
-```jsonc
-{
-  "name": "needs_special_key",
-  "envAllow": ["SPECIAL_KEY"],        // added to whatever sandbox-env.json allows
-  "env": { "SPECIAL_KEY": "dev-123" }, // overrides `set` values from config files
-  "script": { "tool": "my_tool", "args": {}, "text": "DONE" }
-}
-```
-
-Precedence summary: base allowlist ∪ config-file `allow` ∪ fixture `envAllow` determine which **parent** vars pass through; config-file `set` values are injected first, then overridden by fixture `env` values.
-
-Malformed or missing config files are skipped silently rather than failing every test — but note that a typo'd key in `allow` just means the var isn't passed through (the child sees it unset).
+Malformed or missing config files are skipped silently.
 
 ### Authoring tips
 
