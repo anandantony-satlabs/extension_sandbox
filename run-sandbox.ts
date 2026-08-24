@@ -26,6 +26,12 @@ export interface Fixture {
     /** Files to write into the temp dir before the child runs (relative paths; parents auto-created). */
     files?: Record<string, string>;
   };
+  /** Extra env var NAMES to pass through from the parent process, on top of
+   *  those allowed by sandbox-env.json (hot-read each run). */
+  envAllow?: string[];
+  /** Explicit env var VALUES injected into the child environment (override
+   *  `set` values from sandbox-env.json). */
+  env?: Record<string, string>;
   /** Pass/fail assertions on the child run. */
   expect?: {
     alive?: boolean; // child process should survive to natural exit
@@ -131,16 +137,74 @@ function abs(p: string, cwd: string): string {
 // The child is a throwaway `pi` subprocess; keep its environment hermetic and
 // deterministic so tests don't depend on the live session's provider/model/
 // API key. The fake provider needs no network, so we go offline too.
+// Additional vars may be allowed via sandbox-env.json (see loadEnvConfig)
+// or per-fixture `envAllow` / `env` — so targets needing real credentials
+// (e.g. OPENROUTESERVICE_API_KEY) can opt in without code changes.
 const CHILD_ENV_ALLOW = [
   "PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM",
   "PI_CODING_AGENT_DIR", "PI_PACKAGE_DIR",
 ];
 
-function minimalChildEnv(script: unknown): NodeJS.ProcessEnv {
+interface EnvConfig {
+  allow: string[];
+  set: Record<string, string>;
+}
+
+/** Hot-read sandbox env config — called fresh on every child spawn, so edits
+ *  take effect immediately without reloading the extension. Searched in order,
+ *  later sources merge over earlier ones (union for `allow`, override for `set`):
+ *    1. <this extension's dir>/sandbox-env.json   (global defaults)
+ *    2. <project cwd>/sandbox-env.json            (per-project)
+ *    3. <project cwd>/.pi/sandbox-env.json        (per-project, hidden)
+ *
+ *  Schema:
+ *    {
+ *      "allow": ["OPENROUTESERVICE_API_KEY"],   // pass through from parent env if present
+ *      "set":   {"MY_FLAG": "1"}                 // explicit values injected always
+ *    }
+ */
+function loadEnvConfig(cwd: string): EnvConfig {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(here, "sandbox-env.json"),
+    join(cwd, "sandbox-env.json"),
+    join(cwd, ".pi", "sandbox-env.json"),
+  ];
+  const cfg: EnvConfig = { allow: [], set: {} };
+  for (const path of candidates) {
+    try {
+      if (!existsSync(path)) continue;
+      const raw = JSON.parse(readFileSync(path, "utf-8"));
+      if (Array.isArray(raw?.allow)) {
+        cfg.allow.push(...raw.allow.filter((k: unknown): k is string => typeof k === "string" && k.length > 0));
+      }
+      if (raw?.set && typeof raw.set === "object") {
+        for (const [k, v] of Object.entries(raw.set)) {
+          if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+            cfg.set[k] = String(v);
+          }
+        }
+      }
+    } catch {
+      // Malformed or unreadable file: skip it rather than failing every test.
+    }
+  }
+  return cfg;
+}
+
+function minimalChildEnv(
+  script: unknown,
+  extraAllow: string[] = [],
+  setValues: Record<string, string> = {},
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const k of CHILD_ENV_ALLOW) {
+  const allow = new Set([...CHILD_ENV_ALLOW, ...extraAllow]);
+  for (const k of allow) {
     const v = process.env[k];
     if (v !== undefined) env[k] = v;
+  }
+  for (const [k, v] of Object.entries(setValues)) {
+    if (v !== undefined && v !== null) env[k] = String(v);
   }
   env.SANDBOX_SCRIPT = JSON.stringify(script);
   env.PI_OFFLINE = "1";
@@ -228,7 +292,11 @@ export async function runSandbox(o: SandboxOptions): Promise<SandboxResult> {
   if (!existsSync(target)) return { ok: false, outcome: "error", exitCode: null, timedOut: false, durationMs: 0, outputTail: "", detail: `target extension not found: ${target}`, toolResults: [], errors: [] };
 
   const args = childArgs(fake, target, o.fixture.prompt);
-  const env = minimalChildEnv(o.fixture.script);
+  // Hot-read env config each run so sandbox-env.json edits apply instantly.
+  const envCfg = loadEnvConfig(o.cwd);
+  const extraAllow = [...envCfg.allow, ...(o.fixture.envAllow ?? [])];
+  const setValues = { ...envCfg.set, ...(o.fixture.env ?? {}) };
+  const env = minimalChildEnv(o.fixture.script, extraAllow, setValues);
   const { childCwd, createdTemp } = materializeFixture(o.fixture, o.cwd);
   const { output, timedOut, exitCode, durationMs } = await runChild(args, env, childCwd, o.timeoutS ?? 30);
 
@@ -432,7 +500,8 @@ export async function discoverTools(o: DiscoverOptions): Promise<DiscoverResult>
   if (!existsSync(target)) return { ok: false, tools: [], durationMs: 0, outputTail: "", error: `target extension not found: ${target}` };
 
   const args = childArgs(fake, target, "discover");
-  const env = minimalChildEnv({ __discover: true });
+  const envCfg = loadEnvConfig(o.cwd);
+  const env = minimalChildEnv({ __discover: true }, envCfg.allow, envCfg.set);
   const { output, timedOut, exitCode, durationMs } = await runChild(args, env, o.cwd, o.timeoutS ?? 30);
   const durationTotal = Date.now() - start;
 

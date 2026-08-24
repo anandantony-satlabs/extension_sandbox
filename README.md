@@ -187,6 +187,8 @@ A fixture is a JSON object describing one test: the prompt, the scripted fake-mo
       ".env": "SECRET=1"
     }
   },
+  "envAllow": ["MY_API_KEY"],              // optional: extra env var NAMES passed through from the parent process
+  "env": { "MY_FLAG": "1" },               // optional: explicit env var VALUES injected into the child
   "script": {                               // what the fake model "says"
     "tool": "tree",                         //   tool name to call (target must register it)
     "args": { "path": "src" },             //   arguments for the call
@@ -228,6 +230,51 @@ Tools that do file I/O (tree, file listing, globbing, path handling) shouldn't d
 The `tree` sample suite under `tests/tree-fixtures/` demonstrates all of these.
 
 Every file in `fixturesDir` is run (sorted by name). One fixture = one child subprocess.
+
+### Environment variables (`sandbox-env.json`)
+
+The child normally gets a **hermetic environment** — only a small hardcoded allowlist (`PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`, `TERM`, `PI_CODING_AGENT_DIR`, `PI_PACKAGE_DIR`) plus `SANDBOX_SCRIPT` and `PI_OFFLINE=1`. This keeps tests deterministic (no leaked provider keys), but some targets legitimately need credentials — e.g. an extension that calls a real HTTP API.
+
+Instead of editing code, declare extra variables in a **`sandbox-env.json`** file:
+
+```jsonc
+{
+  "allow": ["OPENROUTESERVICE_API_KEY"],  // pass through from parent env if present
+  "set":   { "MY_FLAG": "1", "RETRIES": "2" } // explicit values injected always
+}
+```
+
+| Key | Type | Meaning |
+|-----|------|---------|
+| `allow` | `string[]` | Names of env vars copied **from the live session's environment** into the child, when present. Secrets stay out of files — only names are declared here; values flow from your shell. |
+| `set` | `object` | Explicit `name → value` pairs injected into the child unconditionally (strings/numbers/booleans are stringified). Use for flags the parent doesn't export. |
+
+**Config locations** — all three are read on every child spawn and merged (union for `allow`; later sources override earlier ones for `set`). Because the files are hot-read per run, edits take effect on the next test with **no `/reload` needed**:
+
+1. `<extension_sandbox dir>/sandbox-env.json` — global defaults, travel with the dev tool
+2. `<project cwd>/sandbox-env.json` — per-project
+3. `<project cwd>/.pi/sandbox-env.json` — per-project, hidden ← *recommended*
+
+Example: to let route-launcher fixtures hit the real OpenRouteService API, add `.pi/sandbox-env.json` to your project:
+
+```json
+{ "allow": ["OPENROUTESERVICE_API_KEY"], "set": {} }
+```
+
+**Per-fixture overrides** (highest precedence) for one-off needs:
+
+```jsonc
+{
+  "name": "needs_special_key",
+  "envAllow": ["SPECIAL_KEY"],        // added to whatever sandbox-env.json allows
+  "env": { "SPECIAL_KEY": "dev-123" }, // overrides `set` values from config files
+  "script": { "tool": "my_tool", "args": {}, "text": "DONE" }
+}
+```
+
+Precedence summary: base allowlist ∪ config-file `allow` ∪ fixture `envAllow` determine which **parent** vars pass through; config-file `set` values are injected first, then overridden by fixture `env` values.
+
+Malformed or missing config files are skipped silently rather than failing every test — but note that a typo'd key in `allow` just means the var isn't passed through (the child sees it unset).
 
 ### Authoring tips
 
@@ -274,7 +321,8 @@ live session (your dev pi)
                 --no-extensions --no-skills --no-prompt-templates \
                 --no-themes --no-context-files --no-session \
                 "<prompt>"
-            env: SANDBOX_SCRIPT=<json>, hermetic allowlist, PI_OFFLINE=1
+            env: SANDBOX_SCRIPT=<json>, hermetic allowlist + sandbox-env.json
+                passthrough (allow/set, hot-read per run), PI_OFFLINE=1
             └─ fake provider (pi-ai faux) emits the scripted tool call
             └─ pi executes the target's tool for real
             └─ fake emits the final text; pi prints it; child exits
@@ -286,7 +334,7 @@ live session (your dev pi)
 - **Isolation** = a separate OS process per fixture, killable with `SIGKILL`.
 - **Fidelity** = the child is a real `pi` running the real agent loop (schema validation → `execute` → result → follow-up), so it exercises the exact path that would crash a live session.
 - **Structured results** = the child runs in `--mode json`, so the orchestrator parses the `tool_execution_end` events and exposes each tool's actual return value + `isError` as `resultContains` / `resultIsError` assertions — independent of the fake's scripted final text.
-- **Determinism** = hermetic child env (no leaked provider/model/API key), offline, no resource discovery except the two explicit `-e` extensions.
+- **Determinism** = hermetic child env by default (no leaked provider/model/API key), offline, no resource discovery except the two explicit `-e` extensions. Extra vars opt-in via `sandbox-env.json` / fixture `envAllow`+`env` (hot-read per run).
 - The fake model is built on `@earendil-works/pi-ai`'s tested **faux** provider (the same one pi's own test suite uses).
 ```
 
@@ -295,7 +343,8 @@ live session (your dev pi)
 | Path | Purpose |
 |------|---------|
 | `index.ts` | The dev extension. Registers the `extension_sandbox` tool. |
-| `run-sandbox.ts` | The orchestrator: spawns the child, kills on timeout, returns `SandboxResult`. Also a headless CLI. |
+| `run-sandbox.ts` | The orchestrator: spawns the child, kills on timeout, returns `SandboxResult`. Also a headless CLI. Reads `sandbox-env.json` for env passthrough. |
+| `sandbox-env.json` *(optional)* | Declares extra env vars passed into the child: `{ "allow": [...], "set": {...} }`. Searched in the extension dir, project root, and `.pi/`. Hot-read every run. |
 | `fake/index.ts` | The scripted fake-model provider (pi-ai faux). Reads `SANDBOX_SCRIPT` env. |
 | `targets/risky-ext.ts` | Sample target: a `boom` tool with `safe`/`throw`/`loop` modes. |
 | `targets/risky.ts` | Pure logic for `boom`, unit-testable headless. |
