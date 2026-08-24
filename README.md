@@ -255,12 +255,14 @@ Instead of editing code, declare extra variables in a **`sandbox-env.json`** fil
 2. `<project cwd>/sandbox-env.json` — per-project
 3. `<project cwd>/.pi/sandbox-env.json` — per-project, hidden
 
-A ready-to-edit template ships with the extension: **`sandbox-env.example.json`** (same directory as `index.ts`). Copy it to `sandbox-env.json` and fill in your key names:
+A default **`sandbox-env.json`** ships right beside `index.ts` (with empty `allow`/`set`). To let a target use a real credential, just add its name:
 
-```bash
-cp .pi/extensions/extension_sandbox/sandbox-env.example.json \
-   .pi/extensions/extension_sandbox/sandbox-env.json
-# then edit "allow" to list e.g. "OPENROUTESERVICE_API_KEY"
+```jsonc
+// .pi/extensions/extension_sandbox/sandbox-env.json
+{
+  "allow": ["OPENROUTESERVICE_API_KEY"],
+  "set": {}
+}
 ```
 
 > **Portability note:** if you symlink/copy this extension into a new project's `.pi/extensions/`, an existing `sandbox-env.json` travels with it — so your allow-list follows the extension everywhere. Project-level configs (locations 2–3) layer on top for project-specific keys.
@@ -354,8 +356,7 @@ live session (your dev pi)
 |------|---------|
 | `index.ts` | The dev extension. Registers the `extension_sandbox` tool. |
 | `run-sandbox.ts` | The orchestrator: spawns the child, kills on timeout, returns `SandboxResult`. Also a headless CLI. Reads `sandbox-env.json` for env passthrough. |
-| `sandbox-env.example.json` | Template config — copy to `sandbox-env.json` (beside `index.ts`) to activate env passthrough. |
-| `sandbox-env.json` *(optional)* | Declares extra env vars passed into the child: `{ "allow": [...], "set": {...} }`. Searched beside `index.ts` first, then project root and `.pi/`. Hot-read every run. |
+| `sandbox-env.json` | Env passthrough config shipped beside `index.ts`: `{ "allow": [...], "set": {...} }`. Edit in place to activate. Also read from project root and `.pi/`. Hot-read every run. |
 | `fake/index.ts` | The scripted fake-model provider (pi-ai faux). Reads `SANDBOX_SCRIPT` env. |
 | `targets/risky-ext.ts` | Sample target: a `boom` tool with `safe`/`throw`/`loop` modes. |
 | `targets/risky.ts` | Pure logic for `boom`, unit-testable headless. |

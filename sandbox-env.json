@@ -1,0 +1,5 @@
+{
+	"_comment": "Env passthrough config for sandboxed child processes. 'allow' passes named vars through from the parent process env; 'set' injects explicit values. This file (beside index.ts) travels with the extension into any project; <project>/sandbox-env.json and <project>/.pi/sandbox-env.json also work and override this one. Hot-read every test run - no reload needed.",
+	"allow": [],
+	"set": {}
+}

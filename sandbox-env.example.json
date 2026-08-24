@@ -1,5 +1,0 @@
-{
-	"_comment": "Rename to sandbox-env.json (keep beside index.ts) to activate. 'allow' passes named vars through from the parent process env; 'set' injects explicit values. Also read from <project>/sandbox-env.json and <project>/.pi/sandbox-env.json (later overrides earlier). Hot-read every test run - no reload needed.",
-	"allow": [],
-	"set": {}
-}
